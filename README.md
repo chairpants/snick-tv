@@ -170,3 +170,6 @@ SNICK and its shows are the property of their respective rights holders. This
 player streams publicly hosted recordings from the Internet Archive and hosts
 no video content itself. If you enjoy this, [support the
 Archive](https://archive.org/donate).
+
+The code is [MIT licensed](LICENSE); third-party assets keep their own
+licenses as listed in [CREDITS.md](CREDITS.md).
