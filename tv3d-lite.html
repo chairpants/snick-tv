@@ -8,15 +8,18 @@
   body.lit { background: #fff; }      /* lights on: bright room */
   body.lit #amb { display: none; }    /* ambilight only shows with the lights out */
   body.lit #label { color: #222; }
-  #lights { position: fixed; top: 12px; right: 16px; font-size: 26px;
-    cursor: pointer; z-index: 2; opacity: .6; user-select: none; }
+  /* corner controls: all share a 26px-tall box on the same line, 44px apart */
+  #lights { position: fixed; top: 13px; right: 16px; font-size: 26px;
+    line-height: 1; cursor: pointer; z-index: 2; opacity: .6; user-select: none; }
   #lights:hover { opacity: 1; }
-  #cc { position: fixed; top: 17px; right: 60px; font: bold 17px VCR, monospace;
-    color: #777; cursor: pointer; z-index: 2; user-select: none; display: none; }
-  #cc.on { color: #39ff14; }
-  #cast { position: fixed; top: 17px; right: 104px; font: bold 17px VCR, monospace;
-    color: #777; cursor: pointer; z-index: 2; user-select: none; display: none; }
-  #cast.on { color: #39ff14; }
+  #cc, #cast { position: fixed; top: 13px; color: #777; cursor: pointer;
+    z-index: 2; user-select: none; display: none; }
+  #cc { right: 60px; }
+  #cast { right: 104px; }
+  #cc svg, #cast svg { width: 26px; height: 26px; display: block; }
+  #cc:hover, #cast:hover { color: #aaa; }
+  #cc.on, #cc.on:hover { color: #39ff14; }
+  #cast.on, #cast.on:hover { color: #39ff14; }
   video::cue { color: #39ff14; background: rgba(0, 0, 0, .6);
     font-family: VCR, monospace; }
   #stage { position: absolute; inset: 0; }
@@ -62,8 +65,8 @@
 </svg>
 <div id="label">SNICK</div>
 <div id="lights" title="Lights">&#128161;</div>
-<div id="cc" title="Closed captions">CC</div>
-<div id="cast" title="Cast to a TV">CAST</div>
+<div id="cc" title="Closed captions"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H5V6h14v12zM7 15h3c.55 0 1-.45 1-1v-1H9.5v.5h-2v-3h2v.5H11v-1c0-.55-.45-1-1-1H7c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1zm7 0h3c.55 0 1-.45 1-1v-1h-1.5v.5h-2v-3h2v.5H18v-1c0-.55-.45-1-1-1h-3c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1z"/></svg></div>
+<div id="cast" title="Cast to a TV"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"/></svg></div>
 
 <script src="captions.js"></script>
 <div id="start">&#9654; click to turn on</div>
