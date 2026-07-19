@@ -1,0 +1,830 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SNICK 3D lite</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; overflow: hidden; background: #000;
+    transition: background .5s; }
+  body.lit { background: #fff; }      /* lights on: bright room */
+  body.lit #amb { display: none; }    /* ambilight only shows with the lights out */
+  body.lit #label { color: #222; }
+  #lights { position: fixed; top: 12px; right: 16px; font-size: 26px;
+    cursor: pointer; z-index: 2; opacity: .6; user-select: none; }
+  #lights:hover { opacity: 1; }
+  #cc { position: fixed; top: 17px; right: 60px; font: bold 17px VCR, monospace;
+    color: #777; cursor: pointer; z-index: 2; user-select: none; display: none; }
+  #cc.on { color: #39ff14; }
+  #cast { position: fixed; top: 17px; right: 104px; font: bold 17px VCR, monospace;
+    color: #777; cursor: pointer; z-index: 2; user-select: none; display: none; }
+  #cast.on { color: #39ff14; }
+  video::cue { color: #39ff14; background: rgba(0, 0, 0, .6);
+    font-family: VCR, monospace; }
+  #stage { position: absolute; inset: 0; }
+  #stage > div { pointer-events: none; } /* css3d layer: canvas gets all input */
+  /* the screen: a real <video> glued into the 3D scene by CSS3DRenderer.
+     the browser only DISPLAYS it (no pixel access), so no CORS, no proxy. */
+  #screen { width: 800px; height: 600px; background: #000; position: relative;
+    backface-visibility: hidden; border-radius: 26px; overflow: hidden; }
+  #screen video, #screen canvas { position: absolute; inset: 0;
+    width: 100%; height: 100%; }
+  #screen video { object-fit: fill; }
+  #screen { filter: url(#bulge); } /* CRT barrel bulge; delete to go flat */
+  #screen canvas { z-index: 1; }
+  /* ambilight: a blurred twin of the video washing the room behind the TV */
+  #amb { position: fixed; left: 50%; top: 45%; width: 190vmin; height: 140vmin;
+    transform: translate(-50%, -50%); object-fit: fill; opacity: .85;
+    filter: blur(100px) saturate(1.4) brightness(1.1); z-index: -1;
+    -webkit-mask-image: radial-gradient(ellipse 50% 50% at center, #000 55%, #0000 100%);
+    mask-image: radial-gradient(ellipse 50% 50% at center, #000 55%, #0000 100%); }
+  #label { position: fixed; left: 16px; bottom: 12px; font: 14px VCR, monospace;
+    color: #39ff14; opacity: .7; }
+  #start { position: fixed; inset: 0; display: grid; place-items: center;
+    font: 2em sans-serif; color: #ccc; cursor: pointer; background: #111c; z-index: 1; }
+  /* glass effects: faint scanlines + corner vignette — display-only */
+  #fx { position: absolute; inset: 0; z-index: 2; pointer-events: none;
+    background:
+      repeating-linear-gradient(0deg, #0000 0 2px, rgba(0,0,0,.08) 2px 3px),
+      radial-gradient(ellipse at center, #0000 60%, rgba(0,0,0,.4) 100%); }
+</style>
+<video id="amb" muted playsinline></video>
+<div id="stage"></div>
+<div id="screen"><video id="v" playsinline></video><div id="fx"></div></div>
+<svg width="0" height="0" style="position:absolute">
+  <!-- sRGB: without it the map's neutral 128 reads as 0.216 in linearRGB and
+       the whole image shifts up-left, showing the page behind the screen hole -->
+  <filter id="bulge" x="0" y="0" width="100%" height="100%"
+          color-interpolation-filters="sRGB">
+    <feImage id="bulgemap" x="0" y="0" width="800" height="600"
+             preserveAspectRatio="none" result="map"/>
+    <feDisplacementMap in="SourceGraphic" in2="map" scale="26"
+                       xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+<div id="label">SNICK</div>
+<div id="lights" title="Lights">&#128161;</div>
+<div id="cc" title="Closed captions">CC</div>
+<div id="cast" title="Cast to a TV">CAST</div>
+
+<script src="captions.js"></script>
+<div id="start">&#9654; click to turn on</div>
+<script src="magnavox.glb.js"></script>
+<script>
+// [archive.org item id, display title] — every subject:"SNICK" item whose
+// title carries a full air date, sorted by that date
+const EPISODES = [
+  ['snick-premiere-08-15-92', 'SNICK - 08/15/1992 (Premiere)'],
+  ['snick-09-05-92',  'SNICK - 09/05/1992'],
+  ['snick-09-19-92',  'SNICK - 09/19/1992'],
+  ['snick-09-26-92',  'SNICK - 09/26/1992'],
+  ['snick-10-03-92',  'SNICK - 10/03/1992'],
+  ['snick-sep-19-1992', 'SNICK - 10/24/1992'],
+  ['snick-11-07-92',  'SNICK - 11/07/1992'],
+  ['snick-12-12-92',  'SNICK - 12/12/1992'],
+  ['snick-12-26-92',  'SNICK - 12/26/1992'],
+  ['snick-01-02-93',  'SNICK - 01/02/1993'],
+  ['snick-01-23-93',  'SNICK - 01/23/1993'],
+  ['02-13-93-nick-snick', 'SNICK - 02/13/1993'],
+  ['snick-03-20-93',  'SNICK - 03/20/1993'],
+  ['snick-05-01-93-nick-takes-over-your-school',
+                      'SNICK - 05/01/1993 (Nick Takes Over Your School)'],
+  ['snick-05-08-93',  'SNICK - 05/08/1993'],
+  ['snick-06-05-93_202410', 'SNICK - 06/05/1993'],
+  ['snick-06-12-93_202410', 'SNICK - 06/12/1993'],
+  ['snick-june-26-1993', 'SNICK - 06/26/1993'],
+  ['snick-july-3-1993_20220924', 'SNICK - 07/03/1993'],
+  ['snick-07-17-93',  'SNICK - 07/17/1993'],
+  ['snick-07-24-93',  'SNICK - 07/24/1993'],
+  ['snick-07-31-93',  'SNICK - 07/31/1993'],
+  ['snick-08-07-93',  'SNICK - 08/07/1993'],
+  ['snick-08-14-93',  'SNICK - 08/14/1993'],
+  ['snick-08-21-93',  'SNICK - 08/21/1993'],
+  ['snick-08-28-93',  'SNICK - 08/28/1993'],
+  ['snick-10-02-93',  'SNICK - 10/02/1993'],
+  ['snick-10-09-93',  'SNICK - 10/09/1993'],
+  ['snick-11-06-93',  'SNICK - 11/06/1993'],
+  ['snick-11-13-93',  'SNICK - 11/13/1993'],
+  ['snick-11-20-93',  'SNICK - 11/20/1993'],
+  ['snick-11-27-93',  'SNICK - 11/27/1993'],
+  ['snick-12-04-93',  'SNICK - 12/04/1993'],
+  ['snick-12-11-93',  'SNICK - 12/11/1993'],
+  ['snick-12-18-93',  'SNICK - 12/18/1993'],
+  ['snick-12-25-93',  'SNICK - 12/25/1993'],
+  ['snick-01-08-94',  'SNICK - 01/08/1994'],
+  ['snick-01-22-94',  'SNICK - 01/22/1994'],
+  ['snick-01-29-94',  'SNICK - 01/29/1994'],
+  ['snick-02-26-94',  'SNICK - 02/26/1994'],
+  ['snick03121994',   'SNICK - 03/05/1994'],
+  ['snick-03-26-94',  'SNICK - 03/26/1994'],
+  ['snick-04-09-94',  'SNICK - 04/09/1994'],
+  ['snick-04-09-94-pete-pete', 'SNICK - 04/09/1994 (Pete & Pete)'],
+  ['16-snick-04-23-94-ferguson', 'SNICK - 04/23/1994'],
+  ['snick-05-07-94',  'SNICK - 05/07/1994'],
+  ['snick-05-28-94',  'SNICK - 05/28/1994'],
+  ['snick-06-04-94',  'SNICK - 06/04/1994'],
+  ['snick-06-25-94',  'SNICK - 06/25/1994'],
+  ['snick-july-2-1994_202209', 'SNICK - 07/02/1994'],
+  ['snick-07-23-94',  'SNICK - 07/23/1994'],
+  ['snick-08-06-94',  'SNICK - 08/06/1994'],
+  ['snick-08-20-94',  'SNICK - 08/20/1994'],
+  ['snick-09-03-94',  'SNICK - 09/03/1994'],
+  ['snick-10-01-94',  'SNICK - 10/01/1994'],
+  ['snick-10-08-94',  'SNICK - 10/08/1994'],
+  ['snick-10-29-94',  'SNICK - 10/29/1994'],
+  ['snick-11-05-94',  'SNICK - 11/05/1994'],
+  ['snick-11-12-94',  'SNICK - 11/12/1994'],
+  ['snick-12-03-94',  'SNICK - 12/03/1994'],
+  ['snick-02-04-95',  'SNICK - 02/04/1995'],
+  ['snick-may-4-1996_202209', 'SNICK - 05/04/1996'],
+  ['snick-08-10-96',  'SNICK - 08/10/1996'],
+  ['snick-10-04-97',  'SNICK - 10/04/1997'],
+  ['snick-january-3-1998', 'SNICK - 01/03/1998'],
+];
+
+// build the barrel-distortion displacement map: R pushes x, G pushes y,
+// strength grows with radius^2 so corners curve hardest, like real glass
+{
+  const mapCanvas = Object.assign(document.createElement('canvas'), { width: 256, height: 256 });
+  const mapCtx = mapCanvas.getContext('2d'), img = mapCtx.createImageData(256, 256);
+  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+    const nx = x / 127.5 - 1, ny = y / 127.5 - 1, r2 = nx * nx + ny * ny;
+    const p = (y * 256 + x) * 4;
+    // minus: edges sample inward, so the picture always reaches the bezel
+    img.data[p] = 128 - nx * r2 * 55;
+    img.data[p + 1] = 128 - ny * r2 * 55;
+    img.data[p + 2] = 128;
+    img.data[p + 3] = 255;
+  }
+  mapCtx.putImageData(img, 0, 0);
+  document.getElementById('bulgemap').setAttribute('href', mapCanvas.toDataURL());
+}
+
+// note: DOM elements are referenced through their id globals throughout —
+// v = the screen <video>, amb = ambilight twin, cc/cast/lights = corner
+// buttons, label = episode title, stage = 3D container, start = click-to-play
+let epIndex = 0, fails = 0, thumbs = [];
+
+// watch progress: best-effort localStorage (losing it just means starting fresh)
+let watched = new Set(), resumeT = 0;
+try {
+  const s = JSON.parse(localStorage['snick-progress']);
+  if (EPISODES[s.i]) { epIndex = s.i; resumeT = s.t || 0; }
+  watched = new Set(s.w || []);
+} catch {}
+setInterval(() => {
+  if (!v.duration || v.paused) return;
+  if (v.currentTime > v.duration * 0.9) watched.add(EPISODES[epIndex][0]);
+  try {
+    localStorage['snick-progress'] =
+      JSON.stringify({ i: epIndex, t: v.currentTime, w: [...watched] });
+  } catch {}
+}, 5000);
+async function load() {
+  const [id, title] = EPISODES[epIndex];
+  label.textContent = title;
+  try {
+    const meta = await (await fetch('https://archive.org/metadata/' + id)).json();
+    const file = meta.files.find(f => /\.mp4$/i.test(f.name)) ??
+                 meta.files.find(f => /\.(ogv|webm)$/i.test(f.name));
+    if (!file) throw new Error('no playable file');
+    // archive.org's per-minute thumbnail frames, CORS-readable via /cors/:
+    // the only pixels a proxyless page may legally read - they drive the shell light
+    thumbs = meta.files
+      .map(f => [f.name.match(/thumbs\/.*_(\d+)\.jpg$/), f.name])
+      .filter(([m]) => m)
+      .map(([m, n]) => [+m[1], 'https://archive.org/cors/' + id + '/' + encodeURI(n)])
+      .sort((a, b) => a[0] - b[0]);
+    // direct: display-only video needs no CORS, and /download/ supports seeking
+    v.src = 'https://archive.org/download/' + id + '/' + encodeURIComponent(file.name);
+    amb.src = v.src; // ambilight twin follows along
+    // captions: inline captions.js if present, else captions/<id>.vtt
+    // (the folder needs an http server; file:// blocks track loads).
+    // the CC badge only appears once a track actually loads
+    [...v.querySelectorAll('track')].forEach(t => t.remove());
+    cc.style.display = 'none';
+    const tr = document.createElement('track');
+    tr.kind = 'captions';
+    tr.label = 'English';
+    // size:82 wraps cue lines inside the visible glass (at the default 100%
+    // they wrap at the video edge, which the bulge pushes past the bezel);
+    // line:-2 sits them one line height above the bottom edge
+    const layoutCues = vtt => vtt.replace(/-->[^\r\n]*/g,
+      line => line.includes('size:') ? line : line + ' size:82% line:-2');
+    tr.src = window.CAPTIONS?.[id]
+      ? URL.createObjectURL(new Blob([layoutCues(CAPTIONS[id])], { type: 'text/vtt' }))
+      : 'captions/' + encodeURIComponent(id) + '.vtt';
+    // packed captions are known-good, show the badge right away — Chromium
+    // doesn't reliably fire onload for blob tracks. a loose .vtt file only
+    // counts once it actually loads
+    if (window.CAPTIONS?.[id]) cc.style.display = 'block';
+    else tr.onload = () => cc.style.display = 'block';
+    v.append(tr);
+    tr.track.mode = ccOn ? 'showing' : 'hidden';
+    await v.play();
+    if (resumeT > 5) v.currentTime = resumeT; // pick up where we left off
+    resumeT = 0;
+    fails = 0;
+  } catch (e) {
+    console.warn(id, e);
+    if (++fails < EPISODES.length) step(1);
+    else label.textContent = 'nothing playable';
+  }
+}
+const step = d => { epIndex = (epIndex + d + EPISODES.length) % EPISODES.length; load(); };
+// episodes divide into 4 equal chunks; FF/REW snap to chunk boundaries
+function chunk(d) {
+  const c = v.duration / 4;
+  if (!c) return;
+  v.currentTime = d > 0
+    ? Math.min(v.duration, (Math.floor(v.currentTime / c) + 1) * c)
+    : Math.max(0, (Math.ceil((v.currentTime - 5) / c) - 1) * c); // -5: within 5s of a checkpoint, skip to the previous one
+}
+v.onended = () => { watched.add(EPISODES[epIndex][0]); step(1); };
+v.onerror = () => step(1);
+// keep the ambilight twin in lockstep with the main video
+v.addEventListener('play', () => amb.play().catch(() => {}));
+v.addEventListener('pause', () => amb.pause());
+v.addEventListener('seeked', () => amb.currentTime = v.currentTime);
+setInterval(() => {
+  if (!v.paused && Math.abs(amb.currentTime - v.currentTime) > 0.75)
+    amb.currentTime = v.currentTime;
+}, 3000);
+start.onclick = () => { start.remove(); load(); };
+let ccOn = false;
+function setCC(on) { // shared by the corner CC badge and the SETTINGS menu
+  ccOn = on;
+  cc.classList.toggle('on', on);
+  const t = v.querySelector('track');
+  if (t) t.track.mode = on ? 'showing' : 'hidden';
+  window.onCCChange?.(on); // keep the persisted setting in sync
+}
+cc.onclick = () => setCC(!ccOn);
+// cast: browser-native Remote Playback picker; sends the raw video stream
+// to the device, so the 3D set stays local. Button shows green while casting.
+if ('remote' in v) {
+  cast.style.display = 'block'; // css default is display:none
+  cast.onclick = () => v.remote.prompt().catch(() => {});
+  v.remote.onconnect = () => cast.classList.add('on');
+  v.remote.ondisconnect = () => cast.classList.remove('on');
+}
+</script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
+import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
+
+// css3d layer (the video) first, transparent webgl canvas on top of it:
+// the punched-out screen hole lets the video show through, and the opaque
+// cabinet naturally covers it when the TV faces away
+const cssR = new CSS3DRenderer();
+stage.append(cssR.domElement);
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.domElement.style.position = 'absolute';
+renderer.domElement.style.inset = '0';
+stage.append(renderer.domElement);
+
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+const controls = new OrbitControls(cam, renderer.domElement);
+controls.enableDamping = true;
+controls.enablePan = false; // right mouse is the episode list, not pan
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0x334, 4.5);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, 4);
+sun.position.set(-3, 5, -4);
+scene.add(sun);
+
+// room light switch: dark = black room + ambilight; lit = white room, TV brightly lit
+let lit = false;
+lights.onclick = () => {
+  lit = document.body.classList.toggle('lit');
+  hemi.intensity = lit ? 9 : 4.5;
+  sun.intensity = lit ? 6 : 4;
+};
+
+let tvRoot, screenMesh, stripMesh;
+
+// on-screen display: DOM canvas stacked on the video inside the same 3D element
+const osd = Object.assign(document.createElement('canvas'), { width: 800, height: 600 });
+document.getElementById('screen').append(osd);
+const octx = osd.getContext('2d');
+new FontFace('VCR', "url('https://fonts.cdnfonts.com/s/14798/VCR_OSD_MONO_1.001[1].woff')")
+  .load().then(f => document.fonts.add(f)).catch(() => {});
+
+new GLTFLoader().load(GLB, g => {
+  tvRoot = g.scene;
+  g.scene.rotation.y = Math.PI / 2; // Magnavox fronts +x; the player wants -z
+  g.scene.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.name === 'Object_6') { // flat display plane behind the glass
+      screenMesh = o;
+      // punch a hole: write depth only, so the css video shows through the
+      // glass while the cabinet interior stays hidden behind it
+      o.material = new THREE.MeshBasicMaterial({ colorWrite: false });
+      o.renderOrder = -1;
+    }
+    if (o.name === 'Object_4') o.visible = false; // curved glass shell: would fog the video
+    if (o.name === 'Object_19') stripMesh = o; // the 8-button control strip
+  });
+  // silkscreen-style labels printed on the control-strip buttons, drawn from
+  // the same zone table as the click targets so they can't drift out of bounds
+  const labelCanvas = Object.assign(document.createElement('canvas'), { width: 2048, height: 72 });
+  const lctx = labelCanvas.getContext('2d');
+  const LABELS = ['POWER', 'VOL −', 'VOL +', 'REW', 'FF', 'PAUSE', 'GUIDE', 'SETTINGS'];
+  lctx.fillStyle = '#ded9cf'; lctx.textAlign = 'center'; lctx.textBaseline = 'middle';
+  BUTTONS.forEach((b, n) => {
+    const w = (b[1] - b[0]) / 0.343 * 2048 - 30; // zone width in px, padded
+    let size = 34;
+    lctx.font = `600 ${size}px Arial`;
+    while (lctx.measureText(LABELS[n]).width > w && size > 14)
+      lctx.font = `600 ${size -= 2}px Arial`;
+    lctx.fillText(LABELS[n], (0.166 - (b[0] + b[1]) / 2) / 0.343 * 2048, 38);
+  });
+  const ltex = new THREE.CanvasTexture(labelCanvas);
+  ltex.colorSpace = THREE.SRGBColorSpace;
+  scene.add(g.scene);
+  g.scene.updateMatrixWorld(true);
+  // decal: projects the label canvas onto the actual button surfaces so the
+  // text hugs their curvature instead of floating on a flat plane
+  const decal = new THREE.Mesh(
+    new DecalGeometry(stripMesh, new THREE.Vector3(-0.0055, -0.2485, -1.362),
+      new THREE.Euler(0, Math.PI, 0), new THREE.Vector3(0.343, 0.014, 0.04)),
+    new THREE.MeshStandardMaterial({ map: ltex, transparent: true, roughness: 1,
+      depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
+  decal.renderOrder = 1;
+  scene.add(decal);
+  const tvBox = new THREE.Box3().setFromObject(g.scene);
+  const tvSize = tvBox.getSize(new THREE.Vector3());
+  const tvDiag = tvSize.length(); // scale reference for camera near/far
+  // orbit/zoom around the center of the screen, not the whole cabinet
+  const sBox = new THREE.Box3().setFromObject(screenMesh);
+  const c = sBox.getCenter(new THREE.Vector3());
+  // target is above the TV's center, so fitting the TV needs extra height
+  tvSize.y += 2 * Math.abs(c.y - tvBox.getCenter(new THREE.Vector3()).y);
+  const sSize = sBox.getSize(new THREE.Vector3());
+  // glue the DOM screen element into the scene where the glass is
+  const cssObj = new CSS3DObject(document.getElementById('screen'));
+  cssObj.position.copy(c);
+  cssObj.rotation.y = Math.PI; // face the model's front (-z)
+  cssObj.scale.set(sSize.x / 800, sSize.y / 600, 1);
+  scene.add(cssObj);
+  controls.target.copy(c);
+  // zoom range: screen almost filling the view <-> whole TV edge to edge
+  setZoomLimits = () => {
+    const fit = (w, h) => Math.max(h, w / cam.aspect) / (2 * Math.tan(cam.fov * Math.PI / 360));
+    controls.minDistance = fit(sSize.x * 0.92, sSize.y * 0.92);
+    controls.maxDistance = fit(tvSize.x * 1.04, tvSize.y * 1.04);
+  };
+  setZoomLimits();
+  glow.position.set(c.x, c.y, c.z - 0.15); // just in front of the glass
+  scene.add(glow);
+  cam.position.set(c.x, c.y, c.z - controls.maxDistance); // model front faces -z
+  cam.near = tvDiag / 100; cam.far = tvDiag * 10;
+  cam.updateProjectionMatrix();
+});
+
+// physical front-panel buttons: raycast clicks, pick by x-zone
+// (positions calibrated from an orthographic render of the model's lower panel)
+let tvOn = true;
+function power() {
+  tvOn = !tvOn;
+  v.style.visibility = tvOn ? '' : 'hidden'; // wrapper stays: black dead screen
+  amb.style.visibility = tvOn ? '' : 'hidden'; // dead TVs don't light the room
+  tvOn ? v.play() : v.pause();
+}
+// SNICK lineup history (Wikipedia's schedule table, cross-checked against the
+// archive items' own descriptions); the 4 quarters of each block ~= the 4 shows
+const AYAOTD = 'Are You Afraid of the Dark?';
+const LINEUPS = [ // [first air date using this lineup, shows]
+  ['1992-08-15', ['Clarissa Explains It All', 'Roundhouse', 'The Ren & Stimpy Show', AYAOTD]],
+  ['1994-06-01', ['The Adventures of Pete & Pete', 'Roundhouse', 'The Ren & Stimpy Show', AYAOTD]],
+  ['1994-10-01', ['The Secret World of Alex Mack', 'Roundhouse', 'The Ren & Stimpy Show', AYAOTD]],
+  ['1995-01-01', ['Clarissa Explains It All', 'All That', 'The Ren & Stimpy Show', AYAOTD]],
+  ['1996-03-01', ['The Adventures of Pete & Pete', 'Space Cases', 'All That', AYAOTD]],
+  ['1996-10-12', ['Kenan & Kel', 'All That', 'Space Cases', AYAOTD]],
+  ['1997-02-01', ['The Mystery Files of Shelby Woo', 'All That', 'KaBlam!', AYAOTD]],
+  ['1997-08-01', ['Rugrats', 'Kenan & Kel', 'KaBlam!', AYAOTD]],
+  ['1997-11-01', ['The Journey of Allen Strange', 'Rugrats', 'Kenan & Kel', AYAOTD]],
+];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const airdate = t => { const m = t.match(/(\d\d)\/(\d\d)\/(\d{4})/);
+                       return m ? `${MON[+m[1] - 1]} ${+m[2]}, ${m[3]}` : ''; };
+function lineup([id, title]) {
+  const m = title.match(/(\d\d)\/(\d\d)\/(\d{4})/);
+  const d = `${m[3]}-${m[1]}-${m[2]}`;
+  return LINEUPS.findLast(l => d >= l[0])[1];
+}
+
+const NEON = '#39ff14', LH = 44; // osd color, credits line height
+const listLabel = n => EPISODES[n][1].replace(/\s*\(.*\)/, '')
+  + (watched.has(EPISODES[n][0]) ? ' *' : ''); // * = watched
+
+let settings = {
+  fxEnabled: true, bulgeEnabled: true, overlayEnabled: true, captionsEnabled: false,
+  brightness: 100, contrast: 100, saturate: 100, hueRotate: 0
+};
+const SETTINGS_DEFAULTS = { ...settings };
+
+function saveSettings() {
+  try { localStorage['snick-settings'] = JSON.stringify(settings); } catch {}
+}
+
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage['snick-settings']);
+    if (s) settings = { ...SETTINGS_DEFAULTS, ...s };
+  } catch {}
+}
+
+// corner CC badge clicked: mirror into the persisted setting
+window.onCCChange = on => { settings.captionsEnabled = on; saveSettings(); };
+
+function updateScreenFilters() {
+  const filterStr = `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturate}%) hue-rotate(${settings.hueRotate}deg)`;
+  document.getElementById('screen').style.filter = settings.bulgeEnabled ? `${filterStr} url(#bulge)` : filterStr;
+  document.getElementById('fx').style.display = settings.fxEnabled ? 'block' : 'none';
+  document.getElementById('amb').style.filter = `blur(100px) ${filterStr}`;
+  setCC(settings.captionsEnabled);
+  saveSettings();
+}
+
+let osdMode = null, osdUntil = 0, listScroll = 0;
+const popup = m => {
+  if (osdMode === 'list' || osdMode === 'set') return;
+  osdMode = m; osdUntil = performance.now() + 1500;
+};
+let listClosedAt = 0;
+function toggleList() {
+  if (osdMode === 'list') { osdMode = null; listClosedAt = performance.now(); }
+  else { listScroll = epIndex * LH; osdMode = 'list'; }
+  controls.enableZoom = osdMode !== 'list';
+}
+function toggleSettingsMenu() {
+  osdMode = osdMode === 'set' ? null : 'set';
+  controls.enableZoom = osdMode !== 'set';
+}
+
+function resetSettings() {
+  Object.assign(settings, SETTINGS_DEFAULTS);
+  updateScreenFilters();
+}
+
+// the Magnavox control strip (mesh Object_19): 8 buttons — wider ones at both
+// ends, six narrow between; boundaries read off a calibrated close-up render.
+// each entry: [zone start, zone end, action], zones in model-local z, viewer-left first
+const BUTTONS = [
+  [0.1008, 0.1649, power],                                                 // POWER (wide)
+  [0.0634, 0.1008, () => { v.volume = Math.max(0, v.volume - 0.1); popup('vol'); }],
+  [0.0294, 0.0634, () => { v.volume = Math.min(1, v.volume + 0.1); popup('vol'); }],
+  [-0.0059, 0.0294, () => { chunk(-1); popup('ch'); }],                    // REW: prev show
+  [-0.0410, -0.0059, () => { chunk(1); popup('ch'); }],                    // FF: next show
+  [-0.0756, -0.0410, () => v.paused ? v.play() : v.pause()],               // PAUSE
+  [-0.1098, -0.0756, toggleList],                                          // GUIDE
+  [-0.1743, -0.1098, toggleSettingsMenu],                                   // SETTINGS (wide)
+];
+
+function drawOSD() {
+  octx.clearRect(0, 0, 800, 600);
+  if (osdMode && osdMode !== 'list' && osdMode !== 'set' && performance.now() > osdUntil) osdMode = null;
+  let drew = false;
+  octx.fillStyle = NEON;
+  if (osdMode === 'vol') {
+    octx.font = '48px VCR, monospace'; octx.textAlign = 'left';
+    octx.fillText('VOL', 60, 110);
+    octx.fillText(Array(Math.round(v.volume * 10)).fill('|').join(' '), 60, 170);
+    drew = true;
+  } else if (osdMode === 'ch') {
+    const q = v.duration ? Math.min(3, Math.floor(v.currentTime / (v.duration / 4))) : 0;
+    octx.font = '34px VCR, monospace'; octx.textAlign = 'left';
+    octx.fillText(lineup(EPISODES[epIndex])[q], 60, 110);
+    octx.font = '24px VCR, monospace';
+    octx.fillText(airdate(EPISODES[epIndex][1]), 60, 150);
+    drew = true;
+  } else if (osdMode === 'list') {
+    if (settings.overlayEnabled) {
+      octx.fillStyle = 'rgba(0,0,0,.75)'; octx.fillRect(0, 0, 800, 600);
+    }
+    octx.fillStyle = NEON; octx.font = '30px VCR, monospace'; octx.textAlign = 'center';
+    EPISODES.forEach((_, n) => {
+      const y = 300 + n * LH - listScroll;
+      if (y > -20 && y < 640)
+        octx.fillText((n === epIndex ? '> ' : '') + listLabel(n), 400, y);
+    });
+    drew = true;
+  } else if (osdMode === 'set') {
+    if (settings.overlayEnabled) {
+      octx.fillStyle = 'rgba(0,0,0,.75)'; octx.fillRect(0, 0, 800, 600);
+    }
+    octx.fillStyle = NEON;
+    octx.font = '34px VCR, monospace'; octx.textAlign = 'center';
+    octx.fillText('SETTINGS', 400, 100);
+
+    const drawRow = (label, y, val, min, max, isCheck = false) => {
+      octx.font = '24px VCR, monospace'; octx.textAlign = 'left';
+      octx.fillText(label, 150, y);
+      if (isCheck) {
+        octx.strokeRect(450, y - 20, 40, 30);
+        if (val) octx.fillRect(455, y - 15, 30, 20);
+      } else {
+        octx.strokeRect(300, y - 20, 200, 30);
+        octx.fillRect(300, y - 20, (val - min) / (max - min) * 200, 30);
+      }
+    };
+
+    drawRow('OVERLAY', 140, settings.overlayEnabled, 0, 1, true);
+    drawRow('SCANLINES', 190, settings.fxEnabled, 0, 1, true);
+    drawRow('BULGE', 240, settings.bulgeEnabled, 0, 1, true);
+    drawRow('CAPTIONS', 290, settings.captionsEnabled, 0, 1, true);
+    drawRow('BRIGHTNESS', 340, settings.brightness, 50, 150);
+    drawRow('CONTRAST', 390, settings.contrast, 50, 150);
+    drawRow('COLOR', 440, settings.saturate, 0, 200);
+    drawRow('TINT', 490, settings.hueRotate, 0, 360);
+
+    octx.font = '24px VCR, monospace'; octx.textAlign = 'center';
+    octx.strokeRect(250, 550, 140, 40); octx.fillText('RESET', 320, 575);
+    octx.strokeRect(410, 550, 140, 40); octx.fillText('CLOSE', 480, 575);
+    drew = true;
+  }
+  if (isHoldingVol) {
+    octx.font = '48px VCR, monospace'; octx.textAlign = 'left';
+    octx.fillText('VOL', 60, 110);
+    octx.fillText(Array(Math.round(holdVol * 10)).fill('|').join(' '), 60, 170);
+    drew = true;
+  }
+  if (isHolding) {
+    octx.font = '24px VCR, monospace'; octx.textAlign = 'center';
+    octx.fillText(`${fmt(holdTime)} / ${fmt(v.duration)}`, 400, 560);
+    drew = true;
+  }
+  if (v.src && v.paused && osdMode !== 'list') { // pause bars, top-right corner
+    octx.fillStyle = NEON;
+    octx.fillRect(680, 60, 16, 50); octx.fillRect(708, 60, 16, 50);
+    drew = true;
+  }
+  // hover cues: fade in/out over the click zones so their function is discoverable
+  for (const z in hoverA) hoverA[z] += ((hoverZone === z ? 1 : 0) - hoverA[z]) * 0.12;
+  if (osdMode !== 'list') {
+    const cue = (a, txt, x, yy, align) => {
+      if (a < 0.02) return;
+      octx.globalAlpha = a; octx.textAlign = align; octx.fillStyle = NEON;
+      octx.fillText(txt, x, yy); octx.globalAlpha = 1; drew = true;
+    };
+    octx.font = '44px VCR, monospace';
+    cue(hoverA.rew, '◀◀', 40, 315, 'left');
+    cue(hoverA.ff, '▶▶', 760, 315, 'right');
+    octx.font = '36px VCR, monospace';
+    cue(hoverA.vup, 'VOL +', 400, 80, 'center');
+    cue(hoverA.vdn, 'VOL -', 400, 555, 'center');
+  }
+  osd.style.visibility = drew && tvOn ? '' : 'hidden';
+}
+
+let hoverZone = null;
+const hoverA = { rew: 0, ff: 0, vup: 0, vdn: 0 };
+renderer.domElement.addEventListener('mousemove', e => {
+  hoverZone = null;
+  if (osdMode === 'list') return;
+  const hit = pick(e);
+  if (hit && hit.object === screenMesh) {
+    const u = hit.uv.x, y = 1 - hit.uv.y;
+    if (u < 0.115) hoverZone = 'rew';
+    else if (u > 0.885) hoverZone = 'ff';
+    else if (u > 0.23 && u < 0.77 && y < 0.115) hoverZone = 'vup';
+    else if (u > 0.23 && u < 0.77 && y > 0.885) hoverZone = 'vdn';
+  }
+});
+renderer.domElement.addEventListener('mouseleave', () => hoverZone = null);
+
+v.addEventListener('loadedmetadata', () => popup('ch')); // announce show on new episode
+
+// shell light: average color of the nearest thumbnail frame -> bezel point light
+const glow = new THREE.PointLight(0xffffff, 0, 1.2);
+const sampleCanvas = Object.assign(document.createElement('canvas'), { width: 8, height: 8 });
+const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+const thumbImg = new Image();
+thumbImg.crossOrigin = 'anonymous';
+const glowTargetColor = new THREE.Color(0, 0, 0);
+let glowTargetIntensity = 0;
+thumbImg.onload = () => {
+  sampleCtx.drawImage(thumbImg, 0, 0, 8, 8);
+  const d = sampleCtx.getImageData(0, 0, 8, 8).data;
+  let r = 0, g = 0, b = 0;
+  for (let k = 0; k < d.length; k += 4) { r += d[k]; g += d[k + 1]; b += d[k + 2]; }
+  r /= 64 * 255; g /= 64 * 255; b /= 64 * 255;
+  // normalize hue, gamma-lift brightness so dim scenes still glow
+  const m = Math.max(r, g, b, 0.001), k2 = Math.min(1, Math.sqrt(m)) / m;
+  glowTargetColor.setRGB(r * k2, g * k2, b * k2);
+  glowTargetIntensity = Math.sqrt(m) * 10;
+};
+setInterval(() => {
+  if (!thumbs.length) return; // render loop gates power-off; don't clobber target
+  let frame = thumbs[0]; // latest thumbnail at or before the playhead
+  for (const th of thumbs) { if (th[0] <= v.currentTime) frame = th; else break; }
+  if (thumbImg.src !== frame[1]) thumbImg.src = frame[1];
+}, 2000);
+
+addEventListener('wheel', e => {
+  if (osdMode !== 'list') return;
+  e.preventDefault();
+  listScroll = Math.min(Math.max(listScroll + e.deltaY * 0.5, 0), (EPISODES.length - 1) * LH);
+}, { passive: false });
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+function pick(e) {
+  if (!tvRoot) return;
+  ptr.set(e.clientX / innerWidth * 2 - 1, 1 - e.clientY / innerHeight * 2);
+  ray.setFromCamera(ptr, cam);
+  // skip invisible meshes: raycasts still hit the hidden glass shell,
+  // which sits in front of the screen and would swallow every click
+  return ray.intersectObject(tvRoot, true).find(h => h.object.visible);
+}
+
+// double-click: browser fullscreen, like a video player
+renderer.domElement.addEventListener('dblclick', () => {
+  clearTimeout(pauseTimer); // the two clicks were a fullscreen toggle, not a pause
+  if (hoverA.vup > 0.05 || hoverA.vdn > 0.05) return; // VOL cue on screen: no toggle
+  document.fullscreenElement ? document.exitFullscreen()
+    : document.documentElement.requestFullscreen();
+});
+
+// press-and-hold state: holding FF/REW scrubs, holding VOL +/- ramps the volume
+let holdDir = 0, holdTime = 0, isHolding = false, holdTimer, holdStart;
+let volDir = 0, holdVol = 0, isHoldingVol = false, volTimer;
+let pauseTimer; // delays play/pause so a double-click can cancel it
+const fmt = s => {
+  if (!s) return '00:00:00';
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, s2 = Math.floor(s % 60);
+  return `${h > 0 ? h + ':' : ''}${m.toString().padStart(2, '0')}:${s2.toString().padStart(2, '0')}`;
+};
+// which seek direction a press means: screen left/right edges, or REW/FF panel buttons
+function getDir(e) {
+  const hit = pick(e);
+  if (!hit) return 0;
+  if (hit.object === screenMesh) {
+    const u = hit.uv.x;
+    if (u < 0.115) return -1;
+    if (u > 0.885) return 1;
+  }
+  const p = tvRoot.worldToLocal(hit.point.clone());
+  if (p.y < -0.28 || p.y > -0.21 || p.x < 1.2) return 0;
+  const n = BUTTONS.findIndex(b => p.z >= b[0] && p.z < b[1]);
+  if (n === 3) return -1;
+  if (n === 4) return 1;
+  return 0;
+}
+// same idea for volume: screen top/bottom edges, or the VOL panel buttons
+function getVolDir(e) {
+  const hit = pick(e);
+  if (!hit) return 0;
+  if (hit.object === screenMesh) {
+    const u = hit.uv.x, y = 1 - hit.uv.y;
+    if (y < 0.115 && u > 0.23 && u < 0.77) return 1;
+    if (y > 0.885 && u > 0.23 && u < 0.77) return -1;
+  }
+  const p = tvRoot.worldToLocal(hit.point.clone());
+  if (p.y < -0.28 || p.y > -0.21 || p.x < 1.2) return 0;
+  const n = BUTTONS.findIndex(b => p.z >= b[0] && p.z < b[1]);
+  if (n === 2) return 1;
+  if (n === 1) return -1;
+  return 0;
+}
+let downX, downY; // pointer-down spot, to tell clicks from orbit drags
+renderer.domElement.addEventListener('pointerdown', e => {
+  downX = e.clientX; downY = e.clientY;
+  const dir = getDir(e);
+  if (dir !== 0) {
+    holdDir = dir; holdTime = v.currentTime; holdStart = performance.now();
+    holdTimer = setTimeout(() => { isHolding = true; }, 300);
+  }
+  const vdir = getVolDir(e);
+  if (vdir !== 0) {
+    volDir = vdir; holdVol = v.volume;
+    volTimer = setTimeout(() => { isHoldingVol = true; }, 300);
+  }
+});
+renderer.domElement.addEventListener('pointerup', e => {
+  if (e.button !== 0) return;
+  clearTimeout(holdTimer);
+  clearTimeout(volTimer);
+  if (isHolding) {
+    v.currentTime = holdTime;
+    isHolding = false; holdDir = 0;
+    return;
+  }
+  if (isHoldingVol) {
+    v.volume = holdVol;
+    isHoldingVol = false; volDir = 0;
+    return;
+  }
+
+  if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return; // it was a drag
+  const hit = pick(e);
+  if (!hit) {
+    if (osdMode === 'list') toggleList();
+    if (osdMode === 'set') { osdMode = null; controls.enableZoom = true; }
+    return;
+  }
+  if (osdMode === 'set') {
+    const y = (1 - hit.uv.y) * 600;
+    const x = hit.uv.x * 800;
+    if (y < 130 && x > 300 && x < 500) { osdMode = null; controls.enableZoom = true; return; }
+    if (y > 540 && y < 600) {
+      if (x > 250 && x < 390) resetSettings();
+      if (x > 410 && x < 550) { osdMode = null; controls.enableZoom = true; }
+      return;
+    }
+    const rows = [
+      { k: 'overlayEnabled', y: 140, type: 'check' },
+      { k: 'fxEnabled', y: 190, type: 'check' },
+      { k: 'bulgeEnabled', y: 240, type: 'check' },
+      { k: 'captionsEnabled', y: 290, type: 'check' },
+      { k: 'brightness', y: 340, min: 50, max: 150 },
+      { k: 'contrast', y: 390, min: 50, max: 150 },
+      { k: 'saturate', y: 440, min: 0, max: 200 },
+      { k: 'hueRotate', y: 490, min: 0, max: 360 },
+    ];
+    const row = rows.find(r => y > r.y - 30 && y < r.y + 10);
+    if (row) {
+      if (row.type === 'check') {
+        settings[row.k] = !settings[row.k];
+      } else if (x > 300 && x < 500) {
+        settings[row.k] = Math.round(((x - 300) / 200) * (row.max - row.min) + row.min);
+      }
+      updateScreenFilters();
+    }
+    return;
+  }
+  if (osdMode === 'list' && hit.object === screenMesh) {
+    const x = hit.uv.x * 800;
+    const y = (1 - hit.uv.y) * 600;
+    const n = Math.round((y - 300 + listScroll) / LH);
+    let onText = false;
+    if (n >= 0 && n < EPISODES.length) {
+      octx.font = '30px VCR, monospace';
+      const halfW = octx.measureText(listLabel(n)).width / 2 + 12;
+      onText = Math.abs(x - 400) <= halfW && Math.abs(y - (300 + n * LH - listScroll)) <= 18;
+    }
+    if (onText) { epIndex = n; fails = 0; load(); }
+    toggleList();
+    return;
+  }
+  if (hit.object === screenMesh) {
+    const u = hit.uv.x, y = 1 - hit.uv.y;
+    if (u < 0.115) { chunk(-1); popup('ch'); }
+    else if (u > 0.885) { chunk(1); popup('ch'); }
+    else if (y < 0.115 && u > 0.23 && u < 0.77) { v.volume = Math.min(1, v.volume + 0.1); popup('vol'); }
+    else if (y > 0.885 && u > 0.23 && u < 0.77) { v.volume = Math.max(0, v.volume - 0.1); popup('vol'); }
+    else if (performance.now() - listClosedAt > 400) {
+      clearTimeout(pauseTimer);
+      pauseTimer = setTimeout(() => {
+        if (osdMode !== 'list') v.paused ? v.play() : v.pause();
+      }, 250);
+    }
+    return;
+  }
+  const p = tvRoot.worldToLocal(hit.point.clone());
+  if (p.y < -0.28 || p.y > -0.21 || p.x < 1.2) return;
+  BUTTONS.find(b => p.z >= b[0] && p.z < b[1])?.[2]();
+  holdDir = 0;
+});
+
+renderer.domElement.addEventListener('contextmenu', e => { e.preventDefault(); toggleList(); });
+
+let setZoomLimits = () => {};
+function size() {
+  renderer.setSize(innerWidth, innerHeight);
+  cssR.setSize(innerWidth, innerHeight);
+  cam.aspect = innerWidth / innerHeight;
+  cam.updateProjectionMatrix();
+  setZoomLimits();
+}
+addEventListener('resize', size);
+size();
+loadSettings();
+updateScreenFilters();
+renderer.setAnimationLoop(() => {
+  if (isHolding) {
+    const accel = 1 + Math.max(0, (performance.now() - holdStart) / 1000) * 2;
+    holdTime = Math.max(0, Math.min(v.duration, holdTime + holdDir * 0.15 * accel));
+  }
+  if (isHoldingVol) {
+    holdVol = Math.max(0, Math.min(1, holdVol + volDir * 0.005));
+    v.volume = holdVol;
+  }
+  controls.update();
+  drawOSD();
+  glow.color.lerp(glowTargetColor, 0.03); // ease the shell light between minute-frames
+  // a lit room washes out the screen's glow on the shell
+  glow.intensity += ((tvOn ? glowTargetIntensity * (lit ? 0.2 : 1) : 0) - glow.intensity) * 0.03;
+  cssR.render(scene, cam);
+  renderer.render(scene, cam);
+});
+</script>
