@@ -233,14 +233,45 @@ async function load() {
   }
 }
 const step = d => { epIndex = (epIndex + d + EPISODES.length) % EPISODES.length; load(); };
-// episodes divide into 4 equal chunks; FF/REW snap to chunk boundaries
-function chunk(d) {
+
+// Most broadcasts split into four equal half-hours, but a handful open mid-show,
+// carry longer ad breaks, or drop a segment, so even quarters land FF/REW in the
+// wrong place. Override the show-start times per broadcast here, keyed by archive
+// id. Values are "M:SS" / "H:MM:SS" strings (plain seconds work too):
+//   - list the 3 interior cuts and show 1 is assumed to open the tape at 0
+//   - or list all 4 starts explicitly when the tape opens partway into show 1
+// Anything not listed keeps even quarters, so this table is purely corrective.
+const BOUNDARIES = {
+  // 'snick-01-23-93': ['31:10', '58:40', '1:29:30'],       // 3 interior cuts
+  // 'snick-05-08-93': ['2:15', '32:00', '1:00:20', '1:30:10'], // opens mid-show
+};
+const toSecs = t => typeof t === 'number' ? t
+  : t.split(':').reduce((a, n) => a * 60 + +n, 0);
+// the four show-start times for the current broadcast, sorted; falls back to
+// even quarters. Single source for both the FF/REW snap and the OSD show name.
+function showStarts() {
+  const o = BOUNDARIES[EPISODES[epIndex][0]];
+  if (o && o.length) {
+    let s = o.map(toSecs);
+    if (s.length === 3) s = [0, ...s];   // 3 cuts given -> show 1 opens at 0
+    return s.slice(0, 4).sort((a, b) => a - b);
+  }
   const c = v.duration / 4;
-  if (!c) return;
-  v.currentTime = d > 0
-    ? Math.min(v.duration, (Math.floor(v.currentTime / c) + 1) * c)
-    : Math.max(0, (Math.ceil((v.currentTime - 5) / c) - 1) * c); // -5: within 5s of a checkpoint, skip to the previous one
+  return [0, c, 2 * c, 3 * c];
 }
+// FF/REW snap to those show boundaries
+function chunk(d) {
+  if (!v.duration) return;
+  const s = showStarts();
+  if (d > 0) {
+    v.currentTime = s.find(t => t > v.currentTime + 0.5) ?? v.duration;
+  } else { // -5: within 5s of a boundary, jump past it to the previous one
+    v.currentTime = [...s].reverse().find(t => t < v.currentTime - 5) ?? 0;
+  }
+}
+// which show index the playhead sits in, from the same boundaries
+const showIndex = () =>
+  Math.max(0, showStarts().filter(t => t <= v.currentTime + 0.5).length - 1);
 v.onended = () => { watched.add(EPISODES[epIndex][0]); step(1); };
 v.onerror = () => step(1);
 // keep the ambilight twin in lockstep with the main video
@@ -438,8 +469,109 @@ function lineup([id, title]) {
 }
 
 const NEON = '#39ff14', LH = 44; // osd color, credits line height
-const listLabel = n => EPISODES[n][1].replace(/\s*\(.*\)/, '')
-  + (watched.has(EPISODES[n][0]) ? ' *' : ''); // * = watched
+// per-row tap target that opens the archive.org page: a hand-drawn neon globe
+// (the 90s WWW icon), vector-stroked like the rest of the OSD so it stays crisp
+// on the curved glass and matches the monochrome look — no colour emoji
+const GLYPH_W = 26;
+function drawGlobe(cx, cy, r) {
+  octx.strokeStyle = NEON; octx.lineWidth = 2.2;
+  octx.beginPath(); octx.arc(cx, cy, r, 0, Math.PI * 2); octx.stroke();                  // the globe
+  octx.beginPath(); octx.moveTo(cx - r, cy); octx.lineTo(cx + r, cy); octx.stroke();     // equator
+  octx.beginPath(); octx.ellipse(cx, cy, r * 0.42, r, 0, 0, Math.PI * 2); octx.stroke(); // one meridian
+}
+
+// per-episode runtimes in seconds, hardcoded from archive.org metadata
+// (files[].length) — 65 small integers, not worth a fetch. The two zeros are
+// the broadcasts whose video derivatives have gone missing from the Archive;
+// they show no runtime and are skipped on play anyway.
+const DURATIONS = {
+  "snick-premiere-08-15-92": 6924,
+  "snick-09-05-92": 7217,
+  "snick-09-19-92": 7155,
+  "snick-09-26-92": 7085,
+  "snick-10-03-92": 7157,
+  "snick-sep-19-1992": 4901,
+  "snick-11-07-92": 7191,
+  "snick-12-12-92": 7284,
+  "snick-12-26-92": 7163,
+  "snick-01-02-93": 6979,
+  "snick-01-23-93": 7420,
+  "02-13-93-nick-snick": 10430,
+  "snick-03-20-93": 6885,
+  "snick-05-01-93-nick-takes-over-your-school": 7206,
+  "snick-05-08-93": 7163,
+  "snick-06-05-93_202410": 6999,
+  "snick-06-12-93_202410": 7154,
+  "snick-june-26-1993": 0,
+  "snick-july-3-1993_20220924": 0,
+  "snick-07-17-93": 7025,
+  "snick-07-24-93": 7029,
+  "snick-07-31-93": 7211,
+  "snick-08-07-93": 6889,
+  "snick-08-14-93": 6987,
+  "snick-08-21-93": 6896,
+  "snick-08-28-93": 7131,
+  "snick-10-02-93": 6710,
+  "snick-10-09-93": 6993,
+  "snick-11-06-93": 7262,
+  "snick-11-13-93": 7251,
+  "snick-11-20-93": 6969,
+  "snick-11-27-93": 7426,
+  "snick-12-04-93": 7193,
+  "snick-12-11-93": 7280,
+  "snick-12-18-93": 7462,
+  "snick-12-25-93": 6611,
+  "snick-01-08-94": 7252,
+  "snick-01-22-94": 7002,
+  "snick-01-29-94": 7378,
+  "snick-02-26-94": 6984,
+  "snick03121994": 7055,
+  "snick-03-26-94": 7148,
+  "snick-04-09-94": 6849,
+  "snick-04-09-94-pete-pete": 6982,
+  "16-snick-04-23-94-ferguson": 7069,
+  "snick-05-07-94": 7447,
+  "snick-05-28-94": 9174,
+  "snick-06-04-94": 8927,
+  "snick-06-25-94": 8979,
+  "snick-july-2-1994_202209": 9264,
+  "snick-07-23-94": 9069,
+  "snick-08-06-94": 14263,
+  "snick-08-20-94": 9175,
+  "snick-09-03-94": 6836,
+  "snick-10-01-94": 7071,
+  "snick-10-08-94": 7205,
+  "snick-10-29-94": 7158,
+  "snick-11-05-94": 7124,
+  "snick-11-12-94": 7454,
+  "snick-12-03-94": 7273,
+  "snick-02-04-95": 6953,
+  "snick-may-4-1996_202209": 7022,
+  "snick-08-10-96": 6926,
+  "snick-10-04-97": 7636,
+  "snick-january-3-1998": 7929,
+};
+const hhmm = s => { s = Math.round(s);
+  return Math.floor(s / 3600) + ':' + String(Math.floor(s / 60) % 60).padStart(2, '0'); };
+const listLabel = n => {
+  const [id, title] = EPISODES[n];
+  const d = DURATIONS[id];
+  return title.replace(/\s*\(.*\)/, '')
+    + (d ? '  ' + hhmm(d) : '')       // runtime (blank for the two dead items)
+    + (watched.has(id) ? ' *' : '');  // * = watched
+};
+// name + runtime as one centred block with the link glyph a fixed gap to its
+// right; the draw and the click hit-test both read this so the tap target and
+// the drawn glyph land in exactly the same place
+function listRow(n) {
+  octx.font = '30px VCR, monospace';
+  const text = (n === epIndex ? '> ' : '') + listLabel(n);
+  const tw = octx.measureText(text).width;
+  const gw = GLYPH_W;
+  const gap = 16;
+  const left = 400 - (tw + gap + gw) / 2;
+  return { text, left, tw, gw, glyphLeft: left + tw + gap };
+}
 
 let settings = {
   fxEnabled: true, bulgeEnabled: true, overlayEnabled: true, captionsEnabled: false,
@@ -516,7 +648,7 @@ function drawOSD() {
     octx.fillText(Array(Math.round(v.volume * 10)).fill('|').join(' '), 60, 170);
     drew = true;
   } else if (osdMode === 'ch') {
-    const q = v.duration ? Math.min(3, Math.floor(v.currentTime / (v.duration / 4))) : 0;
+    const q = v.duration ? Math.min(3, showIndex()) : 0;
     octx.font = '34px VCR, monospace'; octx.textAlign = 'left';
     octx.fillText(lineup(EPISODES[epIndex])[q], 60, 110);
     octx.font = '24px VCR, monospace';
@@ -526,11 +658,14 @@ function drawOSD() {
     if (settings.overlayEnabled) {
       octx.fillStyle = 'rgba(0,0,0,.75)'; octx.fillRect(0, 0, 800, 600);
     }
-    octx.fillStyle = NEON; octx.font = '30px VCR, monospace'; octx.textAlign = 'center';
+    octx.fillStyle = NEON; octx.font = '30px VCR, monospace'; octx.textAlign = 'left';
     EPISODES.forEach((_, n) => {
       const y = 300 + n * LH - listScroll;
-      if (y > -20 && y < 640)
-        octx.fillText((n === epIndex ? '> ' : '') + listLabel(n), 400, y);
+      if (y > -20 && y < 640) {
+        const r = listRow(n);
+        octx.fillText(r.text, r.left, y);
+        drawGlobe(r.glyphLeft + GLYPH_W / 2, y - 9, 12);
+      }
     });
     drew = true;
   } else if (osdMode === 'set') {
@@ -779,14 +914,19 @@ renderer.domElement.addEventListener('pointerup', e => {
     const x = hit.uv.x * 800;
     const y = (1 - hit.uv.y) * 600;
     const n = Math.round((y - 300 + listScroll) / LH);
-    let onText = false;
-    if (n >= 0 && n < EPISODES.length) {
-      octx.font = '30px VCR, monospace';
-      const halfW = octx.measureText(listLabel(n)).width / 2 + 12;
-      onText = Math.abs(x - 400) <= halfW && Math.abs(y - (300 + n * LH - listScroll)) <= 18;
+    if (n >= 0 && n < EPISODES.length &&
+        Math.abs(y - (300 + n * LH - listScroll)) <= 18) {
+      const r = listRow(n);
+      if (x >= r.glyphLeft - 8 && x <= r.glyphLeft + r.gw + 8) {
+        // the link glyph: open the archive.org page in a new tab, leave the
+        // list up so more can be opened (pointerup = a real gesture, so this
+        // is not popup-blocked)
+        window.open('https://archive.org/details/' + EPISODES[n][0], '_blank', 'noopener');
+        return;
+      }
+      if (x >= r.left - 8 && x <= r.left + r.tw + 8) { epIndex = n; fails = 0; load(); toggleList(); return; }
     }
-    if (onText) { epIndex = n; fails = 0; load(); }
-    toggleList();
+    toggleList();   // a click in the margins just closes the list
     return;
   }
   if (hit.object === screenMesh) {
