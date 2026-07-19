@@ -41,8 +41,9 @@ in the dial, spanning the premiere on August 15, 1992 through January 1998.
   like a lit screen in a dark room.
 - **Shell glow** — a point light tinted by the current picture's average color
   plays across the cabinet and bezel, easing between shades as scenes change.
-- **Lights switch** (💡, top-right) — flip between a dark den and a bright
-  room. The ambilight only shows with the lights out, the way it should.
+- **Lights switch** (the bulb icon, top-right) — flip between a dark den and
+  a bright room. The ambilight only shows with the lights out, the way it
+  should.
 
 ![Lights on: bright room, the ambilight disappears](screenshots/lights-on.png)
 
@@ -113,7 +114,7 @@ anything that fails to stream is skipped automatically.
 | Right-click | Open / close the GUIDE |
 | Double-click | Fullscreen |
 | Panel buttons | POWER · VOL − · VOL + · REW · FF · PAUSE · GUIDE · SETTINGS |
-| 💡 / CC / CAST (top-right) | Room lights · captions · cast to a TV |
+| Bulb / CC / cast icons (top-right) | Room lights · captions · cast to a TV |
 
 ## How it works
 
