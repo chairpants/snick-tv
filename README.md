@@ -84,7 +84,10 @@ is reconstructed per-era from the schedule history, so a 1992 tape announces
   episodes and render as real VTT tracks in green VCR type, wrapped to fit
   inside the curved glass. Toggle with the CC badge or in SETTINGS.
 - **CAST** sends the raw video stream to a real TV via the browser's Remote
-  Playback API, while the 3D set keeps playing at home.
+  Playback API, while the 3D set keeps playing at home. It needs a
+  Cast-capable device on your network and a browser with cast discovery
+  enabled (Chrome, mainly — Edge and Brave ship with it off); if nothing is
+  reachable, the corner label tells you so.
 
 ![The volume meter popping up over the picture](screenshots/volume.png)
 

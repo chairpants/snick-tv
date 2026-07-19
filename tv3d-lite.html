@@ -262,7 +262,17 @@ cc.onclick = () => setCC(!ccOn);
 // to the device, so the 3D set stays local. Button shows green while casting.
 if ('remote' in v) {
   cast.style.display = 'block'; // css default is display:none
-  cast.onclick = () => v.remote.prompt().catch(() => {});
+  let flashT;
+  const flash = msg => { // borrow the corner label to explain a failed cast
+    label.textContent = msg;
+    clearTimeout(flashT);
+    flashT = setTimeout(() => label.textContent = EPISODES[epIndex][1], 2500);
+  };
+  cast.onclick = () => v.remote.prompt().catch(e => {
+    if (e.name === 'NotAllowedError') return; // user closed the picker themselves
+    flash(e.name === 'NotFoundError' ? 'NO CAST DEVICES FOUND'
+        : 'CASTING NOT SUPPORTED IN THIS BROWSER');
+  });
   v.remote.onconnect = () => cast.classList.add('on');
   v.remote.ondisconnect = () => cast.classList.remove('on');
 }
