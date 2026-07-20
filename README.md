@@ -19,12 +19,12 @@ commercials, promos, and channel bumpers intact.
 This project plays those tapes the way they were meant to be seen: on a curved
 piece of glass in a dark room. It is a single self-contained HTML file that
 renders a Magnavox 19" CRT in 3D, glues a live streaming video onto its screen,
-and recreates the glow a television throws around a room. **66 broadcasts** are
+and recreates the glow a television throws around a room. **72 broadcasts** are
 in the dial, spanning the premiere on August 15, 1992 through January 1998.
 
 | | |
 |---|---|
-| ![A LEGO commercial mid-break](screenshots/player-2.png) | ![A 1992 episode](screenshots/player-3.png) |
+| ![A commercial break mid-episode](screenshots/player-2.png) | ![A 1992 episode](screenshots/player-3.png) |
 | ![Zoomed in to the glass — scanlines and barrel curve](screenshots/zoom.png) | ![Paused, pause bars on the OSD](screenshots/paused.png) |
 
 ## Features
@@ -74,15 +74,15 @@ you which show you just landed on and the original air date — the lineup data
 is reconstructed per-era from the schedule history, so a 1992 tape announces
 *Roundhouse* and a 1997 tape announces *Kenan & Kel*.
 
-![FF to the next show: "Roundhouse — Mar 20, 1993"](screenshots/now-playing.png)
+![FF to the next show: "The Adventures of Pete and Pete — Jun 4, 1994"](screenshots/now-playing.png)
 
 ### Volume, captions, casting
 
 - Click (or click-and-hold) the screen's top/bottom edges or the VOL panel
   buttons; a green segment meter pops up. Hover cues fade in over each touch
   zone so everything is discoverable.
-- **Closed captions**, machine-generated with Whisper, currently cover 9
-  episodes and render as real VTT tracks in green VCR type, wrapped to fit
+- **Closed captions**, machine-generated with Whisper, cover every episode
+  in the dial and render as real VTT tracks in green VCR type, wrapped to fit
   inside the curved glass. Toggle with the CC badge or in SETTINGS.
 - **CAST** sends the raw video stream to a real TV via the browser's Remote
   Playback API, while the 3D set keeps playing at home. It needs a
@@ -92,7 +92,7 @@ is reconstructed per-era from the schedule history, so a 1992 tape announces
 
 ![The volume meter popping up over the picture](screenshots/volume.png)
 
-![Whisper captions on a Wild Side Show segment](screenshots/captions.png)
+![Whisper captions synced to a vintage Barbie commercial](screenshots/captions.png)
 
 ### It remembers
 

@@ -72,8 +72,10 @@
 <div id="start">&#9654; click to turn on</div>
 <script src="magnavox.glb.js"></script>
 <script>
-// [archive.org item id, display title] — every subject:"SNICK" item whose
-// title carries a full air date, sorted by that date
+// [archive.org item id, display title, exact filename] — every subject:"SNICK"
+// item whose title carries a full air date, sorted by that date. The filename
+// is only needed when the item bundles more than one broadcast (see epKey
+// below) — plain single-video items omit it.
 const EPISODES = [
   ['snick-premiere-08-15-92', 'SNICK - 08/15/1992 (Premiere)'],
   ['snick-09-05-92',  'SNICK - 09/05/1992'],
@@ -91,10 +93,22 @@ const EPISODES = [
   ['snick-05-01-93-nick-takes-over-your-school',
                       'SNICK - 05/01/1993 (Nick Takes Over Your School)'],
   ['snick-05-08-93',  'SNICK - 05/08/1993'],
+  ['snick-1993-05-22-woc-archiver-sketch-the-cow', 'SNICK - 05/15/1993',
+    'SNICK (1993-05-15) WOC {Archiver mushbrain}.mp4'],
+  ['snick-1993-05-22-woc-archiver-sketch-the-cow', 'SNICK - 05/22/1993',
+    'SNICK (1993-05-22) WOC {Archiver Sketch the Cow}.mp4'],
+  ['snick-1993-05-22-woc-archiver-sketch-the-cow', 'SNICK - 05/29/1993',
+    'SNICK (1993-05-29) Clarissa, Roundhouse, Ren & Stimpy, AYAOTD {Archiver ACarchives}.mp4'],
   ['snick-06-05-93_202410', 'SNICK - 06/05/1993'],
   ['snick-06-12-93_202410', 'SNICK - 06/12/1993'],
-  ['snick-june-26-1993', 'SNICK - 06/26/1993'],
-  ['snick-july-3-1993_20220924', 'SNICK - 07/03/1993'],
+  ['snick-1993-05-22-woc-archiver-sketch-the-cow', 'SNICK - 06/19/1993',
+    'SNICK (1993-06-19) WOC {Archived by mushbrain}.mp4'],
+  ['snick-1993-05-22-woc-archiver-sketch-the-cow', 'SNICK - 06/26/1993',
+    'SNICK (1993-06-26) {Archiver mushbrain} (WOC).mp4'],
+  ['snick-1993-05-22-woc-archiver-sketch-the-cow', 'SNICK - 07/03/1993',
+    'SNICK (1993-07-03) WOC {Archiver mushbrain}.mp4'],
+  ['snick-1993-05-22-woc-archiver-sketch-the-cow', 'SNICK - 07/10/1993',
+    'SNICK (1993-07-10) WOC {Archiver musbrain}.mp4'],
   ['snick-07-17-93',  'SNICK - 07/17/1993'],
   ['snick-07-24-93',  'SNICK - 07/24/1993'],
   ['snick-07-31-93',  'SNICK - 07/31/1993'],
@@ -104,6 +118,8 @@ const EPISODES = [
   ['snick-08-28-93',  'SNICK - 08/28/1993'],
   ['snick-10-02-93',  'SNICK - 10/02/1993'],
   ['snick-10-09-93',  'SNICK - 10/09/1993'],
+  ['snick-october-1993', 'SNICK - 10/23/1993'],
+  ['snick-or-treat-1993', 'SNICK - 10/30/1993'],
   ['snick-11-06-93',  'SNICK - 11/06/1993'],
   ['snick-11-13-93',  'SNICK - 11/13/1993'],
   ['snick-11-20-93',  'SNICK - 11/20/1993'],
@@ -142,6 +158,9 @@ const EPISODES = [
   ['snick-10-04-97',  'SNICK - 10/04/1997'],
   ['snick-january-3-1998', 'SNICK - 01/03/1998'],
 ];
+// identity key for bookkeeping (DURATIONS/SEGMENTS/watched) — plain archive id,
+// or id+filename when several broadcasts share one bundled archive.org item
+const epKey = ([id, , file]) => file ? id + '::' + file : id;
 
 // build the barrel-distortion displacement map: R pushes x, G pushes y,
 // strength grows with radius^2 so corners curve hardest, like real glass
@@ -175,31 +194,38 @@ try {
 } catch {}
 setInterval(() => {
   if (!v.duration || v.paused) return;
-  if (v.currentTime > v.duration * 0.9) watched.add(EPISODES[epIndex][0]);
+  if (v.currentTime > v.duration * 0.9) watched.add(epKey(EPISODES[epIndex]));
   try {
     localStorage['snick-progress'] =
       JSON.stringify({ i: epIndex, t: v.currentTime, w: [...watched] });
   } catch {}
 }, 5000);
 async function load() {
-  const [id, title] = EPISODES[epIndex];
+  const [id, title, fileHint] = EPISODES[epIndex];
+  const key = epKey(EPISODES[epIndex]);
   label.textContent = title;
   try {
     const meta = await (await fetch('https://archive.org/metadata/' + id)).json();
-    const file = meta.files.find(f => /\.mp4$/i.test(f.name)) ??
-                 meta.files.find(f => /\.(ogv|webm)$/i.test(f.name));
+    const file = fileHint
+      ? meta.files.find(f => f.name === fileHint)
+      : meta.files.find(f => /\.mp4$/i.test(f.name)) ??
+        meta.files.find(f => /\.(ogv|webm)$/i.test(f.name));
     if (!file) throw new Error('no playable file');
     // archive.org's per-minute thumbnail frames, CORS-readable via /cors/:
-    // the only pixels a proxyless page may legally read - they drive the shell light
+    // the only pixels a proxyless page may legally read - they drive the shell light.
+    // bundled items hold thumbs for every broadcast inside, named after their
+    // source file, so scope to the chosen file or the glow would sample frames
+    // from a different episode entirely
+    const stem = file.name.replace(/\.[^.]+$/, '');
     thumbs = meta.files
       .map(f => [f.name.match(/thumbs\/.*_(\d+)\.jpg$/), f.name])
-      .filter(([m]) => m)
+      .filter(([m, n]) => m && (!fileHint || n.includes(stem)))
       .map(([m, n]) => [+m[1], 'https://archive.org/cors/' + id + '/' + encodeURI(n)])
       .sort((a, b) => a[0] - b[0]);
     // direct: display-only video needs no CORS, and /download/ supports seeking
     v.src = 'https://archive.org/download/' + id + '/' + encodeURIComponent(file.name);
     amb.src = v.src; // ambilight twin follows along
-    // captions: inline captions.js if present, else captions/<id>.vtt
+    // captions: inline captions.js if present, else captions/<key>.vtt
     // (the folder needs an http server; file:// blocks track loads).
     // the CC badge only appears once a track actually loads
     [...v.querySelectorAll('track')].forEach(t => t.remove());
@@ -212,13 +238,13 @@ async function load() {
     // line:-2 sits them one line height above the bottom edge
     const layoutCues = vtt => vtt.replace(/-->[^\r\n]*/g,
       line => line.includes('size:') ? line : line + ' size:82% line:-2');
-    tr.src = window.CAPTIONS?.[id]
-      ? URL.createObjectURL(new Blob([layoutCues(CAPTIONS[id])], { type: 'text/vtt' }))
-      : 'captions/' + encodeURIComponent(id) + '.vtt';
+    tr.src = window.CAPTIONS?.[key]
+      ? URL.createObjectURL(new Blob([layoutCues(CAPTIONS[key])], { type: 'text/vtt' }))
+      : 'captions/' + encodeURIComponent(key) + '.vtt';
     // packed captions are known-good, show the badge right away — Chromium
     // doesn't reliably fire onload for blob tracks. a loose .vtt file only
     // counts once it actually loads
-    if (window.CAPTIONS?.[id]) cc.style.display = 'block';
+    if (window.CAPTIONS?.[key]) cc.style.display = 'block';
     else tr.onload = () => cc.style.display = 'block';
     v.append(tr);
     tr.track.mode = ccOn ? 'showing' : 'hidden';
@@ -234,28 +260,80 @@ async function load() {
 }
 const step = d => { epIndex = (epIndex + d + EPISODES.length) % EPISODES.length; load(); };
 
-// Most broadcasts split into four equal half-hours, but a handful open mid-show,
-// carry longer ad breaks, or drop a segment, so even quarters land FF/REW in the
-// wrong place. Override the show-start times per broadcast here, keyed by archive
-// id. Values are "M:SS" / "H:MM:SS" strings (plain seconds work too):
-//   - list the 3 interior cuts and show 1 is assumed to open the tape at 0
-//   - or list all 4 starts explicitly when the tape opens partway into show 1
-// Anything not listed keeps even quarters, so this table is purely corrective.
-const BOUNDARIES = {
-  // 'snick-01-23-93': ['31:10', '58:40', '1:29:30'],       // 3 interior cuts
-  // 'snick-05-08-93': ['2:15', '32:00', '1:00:20', '1:30:10'], // opens mid-show
+// Hand-labeled show segments per broadcast, keyed by archive id: [start, end,
+// show name] in seconds, made with the local label tool (label-tool.html, not
+// in the repo). FF/REW snap to these starts and the OSD shows the real name;
+// end times are kept for a future commercial-skip experiment (the gaps between
+// segments are the ad breaks). Anything not listed falls back to even quarters
+// and the era's LINEUPS guess.
+const SEGMENTS = {
+  '02-13-93-nick-snick': [
+    [0, 1950, 'Doug'],
+    [1950, 3725, 'Rugrats'],
+    [3725, 5361, 'Clarissa Explains It All'],
+    [5361, 7083, 'Roundhouse'],
+    [7072, 8778, 'Ren And Stimpy'],
+    [8804, 10420, 'Are You Afraid Of The Dark'],
+  ],
+  'snick-05-28-94': [ // Pete & Pete marathon
+    [0, 1850, 'The Adventures of Pete and Pete'],
+    [1850, 3830, 'The Adventures of Pete and Pete'],
+    [3830, 5725, 'The Adventures of Pete and Pete'],
+    [5870, 7450, 'The Adventures of Pete and Pete'],
+    [7541, 9174, 'The Adventures of Pete and Pete'],
+  ],
+  'snick-06-04-94': [
+    [16, 1631, 'Clarissa Explains It All'],
+    [1821, 3423, 'The Adventures of Pete and Pete'],
+    [3648, 5189, 'Ren And Stimpy'],
+    [5285, 6949, 'Are You Afraid Of The Dark'],
+    [7100, 8927, 'Roundhouse'],
+  ],
+  'snick-06-25-94': [
+    [200, 1765, 'Clarissa Explains It All'],
+    [1923, 3632, 'The Adventures of Pete and Pete'],
+    [3831, 5257, 'Ren And Stimpy'],
+    [5382, 6968, 'Are You Afraid Of The Dark'],
+    [7129, 8979, 'Roundhouse'],
+  ],
+  'snick-july-2-1994_202209': [
+    [234, 1841, 'Clarissa Explains It All'],
+    [2045, 3621, 'The Adventures of Pete and Pete'],
+    [3825, 5483, 'Ren And Stimpy'],
+    [5687, 7209, 'Are You Afraid Of The Dark'],
+    [7474, 9263, 'Roundhouse'],
+  ],
+  'snick-07-23-94': [
+    [0, 1703, 'Clarissa Explains It All'],
+    [1914, 3619, 'The Adventures of Pete and Pete'],
+    [3740, 5220, 'Ren And Stimpy'],
+    [5416, 6973, 'Are You Afraid Of The Dark'],
+    [7160, 9068, 'Roundhouse'],
+  ],
+  'snick-08-06-94': [ // AYAOTD marathon after the regular block
+    [0, 1706, 'Clarissa Explains It All'],
+    [1955, 3600, 'The Adventures of Pete and Pete'],
+    [3609, 5046, 'Ren And Stimpy'],
+    [5198, 6803, 'Are You Afraid Of The Dark'],
+    [7004, 8640, 'Are You Afraid Of The Dark'],
+    [8938, 10551, 'Are You Afraid Of The Dark'],
+    [10672, 12279, 'Are You Afraid Of The Dark'],
+    [12478, 14215, 'Are You Afraid Of The Dark'],
+  ],
+  'snick-08-20-94': [
+    [259, 1816, 'Clarissa Explains It All'],
+    [2068, 3732, 'The Adventures of Pete and Pete'],
+    [3969, 5524, 'Ren And Stimpy'],
+    [5738, 7335, 'Are You Afraid Of The Dark'],
+    [7492, 9235, 'Roundhouse'],
+  ],
 };
-const toSecs = t => typeof t === 'number' ? t
-  : t.split(':').reduce((a, n) => a * 60 + +n, 0);
-// the four show-start times for the current broadcast, sorted; falls back to
-// even quarters. Single source for both the FF/REW snap and the OSD show name.
+// show-start times for the current broadcast; labeled segments when we have
+// them, even quarters otherwise. Single source for both the FF/REW snap and
+// the OSD show name.
 function showStarts() {
-  const o = BOUNDARIES[EPISODES[epIndex][0]];
-  if (o && o.length) {
-    let s = o.map(toSecs);
-    if (s.length === 3) s = [0, ...s];   // 3 cuts given -> show 1 opens at 0
-    return s.slice(0, 4).sort((a, b) => a - b);
-  }
+  const seg = SEGMENTS[epKey(EPISODES[epIndex])];
+  if (seg) return seg.map(s => s[0]);
   const c = v.duration / 4;
   return [0, c, 2 * c, 3 * c];
 }
@@ -272,7 +350,7 @@ function chunk(d) {
 // which show index the playhead sits in, from the same boundaries
 const showIndex = () =>
   Math.max(0, showStarts().filter(t => t <= v.currentTime + 0.5).length - 1);
-v.onended = () => { watched.add(EPISODES[epIndex][0]); step(1); };
+v.onended = () => { watched.add(epKey(EPISODES[epIndex])); step(1); };
 v.onerror = () => step(1);
 // keep the ambilight twin in lockstep with the main video
 v.addEventListener('play', () => amb.play().catch(() => {}));
@@ -481,9 +559,8 @@ function drawGlobe(cx, cy, r) {
 }
 
 // per-episode runtimes in seconds, hardcoded from archive.org metadata
-// (files[].length) — 65 small integers, not worth a fetch. The two zeros are
-// the broadcasts whose video derivatives have gone missing from the Archive;
-// they show no runtime and are skipped on play anyway.
+// (files[].length) — small integers, not worth a fetch. Entries for bundled
+// items are keyed by epKey (id::filename), same as SEGMENTS and watched.
 const DURATIONS = {
   "snick-premiere-08-15-92": 6924,
   "snick-09-05-92": 7217,
@@ -500,10 +577,15 @@ const DURATIONS = {
   "snick-03-20-93": 6885,
   "snick-05-01-93-nick-takes-over-your-school": 7206,
   "snick-05-08-93": 7163,
+  "snick-1993-05-22-woc-archiver-sketch-the-cow::SNICK (1993-05-15) WOC {Archiver mushbrain}.mp4": 7033,
+  "snick-1993-05-22-woc-archiver-sketch-the-cow::SNICK (1993-05-22) WOC {Archiver Sketch the Cow}.mp4": 7277,
+  "snick-1993-05-22-woc-archiver-sketch-the-cow::SNICK (1993-05-29) Clarissa, Roundhouse, Ren & Stimpy, AYAOTD {Archiver ACarchives}.mp4": 7127,
   "snick-06-05-93_202410": 6999,
   "snick-06-12-93_202410": 7154,
-  "snick-june-26-1993": 0,
-  "snick-july-3-1993_20220924": 0,
+  "snick-1993-05-22-woc-archiver-sketch-the-cow::SNICK (1993-06-19) WOC {Archived by mushbrain}.mp4": 7116,
+  "snick-1993-05-22-woc-archiver-sketch-the-cow::SNICK (1993-06-26) {Archiver mushbrain} (WOC).mp4": 7212,
+  "snick-1993-05-22-woc-archiver-sketch-the-cow::SNICK (1993-07-03) WOC {Archiver mushbrain}.mp4": 7016,
+  "snick-1993-05-22-woc-archiver-sketch-the-cow::SNICK (1993-07-10) WOC {Archiver musbrain}.mp4": 7084,
   "snick-07-17-93": 7025,
   "snick-07-24-93": 7029,
   "snick-07-31-93": 7211,
@@ -513,6 +595,8 @@ const DURATIONS = {
   "snick-08-28-93": 7131,
   "snick-10-02-93": 6710,
   "snick-10-09-93": 6993,
+  "snick-october-1993": 7180,
+  "snick-or-treat-1993": 7302,
   "snick-11-06-93": 7262,
   "snick-11-13-93": 7251,
   "snick-11-20-93": 6969,
@@ -554,11 +638,12 @@ const DURATIONS = {
 const hhmm = s => { s = Math.round(s);
   return Math.floor(s / 3600) + ':' + String(Math.floor(s / 60) % 60).padStart(2, '0'); };
 const listLabel = n => {
-  const [id, title] = EPISODES[n];
-  const d = DURATIONS[id];
+  const [, title] = EPISODES[n];
+  const key = epKey(EPISODES[n]);
+  const d = DURATIONS[key];
   return title.replace(/\s*\(.*\)/, '')
     + (d ? '  ' + hhmm(d) : '')       // runtime (blank for the two dead items)
-    + (watched.has(id) ? ' *' : '');  // * = watched
+    + (watched.has(key) ? ' *' : ''); // * = watched
 };
 // name + runtime as one centred block with the link glyph a fixed gap to its
 // right; the draw and the click hit-test both read this so the tap target and
@@ -617,7 +702,6 @@ function toggleSettingsMenu() {
   osdMode = osdMode === 'set' ? null : 'set';
   controls.enableZoom = osdMode !== 'set';
 }
-
 function resetSettings() {
   Object.assign(settings, SETTINGS_DEFAULTS);
   updateScreenFilters();
@@ -648,9 +732,12 @@ function drawOSD() {
     octx.fillText(Array(Math.round(v.volume * 10)).fill('|').join(' '), 60, 170);
     drew = true;
   } else if (osdMode === 'ch') {
-    const q = v.duration ? Math.min(3, showIndex()) : 0;
+    const seg = SEGMENTS[epKey(EPISODES[epIndex])];
+    const q = v.duration ? showIndex() : 0;
+    const name = seg ? seg[Math.min(q, seg.length - 1)][2]
+                     : lineup(EPISODES[epIndex])[Math.min(3, q)];
     octx.font = '34px VCR, monospace'; octx.textAlign = 'left';
-    octx.fillText(lineup(EPISODES[epIndex])[q], 60, 110);
+    octx.fillText(name, 60, 110);
     octx.font = '24px VCR, monospace';
     octx.fillText(airdate(EPISODES[epIndex][1]), 60, 150);
     drew = true;
