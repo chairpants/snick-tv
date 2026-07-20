@@ -24,7 +24,7 @@ in the dial, spanning the premiere on August 15, 1992 through January 1998.
 
 | | |
 |---|---|
-| ![A commercial break mid-episode](screenshots/player-2.png) | ![A 1992 episode](screenshots/player-3.png) |
+| ![A commercial break mid-episode](screenshots/player-2.png) | ![An archived broadcast](screenshots/player-3.png) |
 | ![Zoomed in to the glass — scanlines and barrel curve](screenshots/zoom.png) | ![Paused, pause bars on the OSD](screenshots/paused.png) |
 
 ## Features
@@ -74,7 +74,7 @@ you which show you just landed on and the original air date — the lineup data
 is reconstructed per-era from the schedule history, so a 1992 tape announces
 *Roundhouse* and a 1997 tape announces *Kenan & Kel*.
 
-![FF to the next show: "The Adventures of Pete and Pete — Jun 4, 1994"](screenshots/now-playing.png)
+![FF to the next show: "Are You Afraid of the Dark? — Dec 4, 1993"](screenshots/now-playing.png)
 
 ### Volume, captions, casting
 
@@ -92,7 +92,7 @@ is reconstructed per-era from the schedule history, so a 1992 tape announces
 
 ![The volume meter popping up over the picture](screenshots/volume.png)
 
-![Whisper captions synced to a vintage Barbie commercial](screenshots/captions.png)
+![Whisper captions, wrapped to fit inside the curved glass](screenshots/captions.png)
 
 ### It remembers
 
