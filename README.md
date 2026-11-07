@@ -2,6 +2,8 @@
 
 **Saturday night, 1992, running in your browser.**
 
+**▶ [Watch it now in your browser](https://chairpants.github.io/snick-tv/tv3d-lite.html)**
+
 A 3D CRT television that streams real, complete SNICK broadcasts — commercials
 and all — straight from the Internet Archive. One HTML file, no build, no
 backend, no video hosted here.
